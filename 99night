@@ -147,14 +147,14 @@ task.spawn(function()
 end)
 
 -- ===============================
--- Kill Aura Section (Added to Farm Tab)
+-- Kill Aura Section (Fixed 1 Hit)
 -- ===============================
 farmTab:CreateSection("Kill Aura")
 
 local killAuraEnabled = false
-local killAuraRange = 10 -- Default range
+local killAuraRange = 10 -- default
 
--- Toggle untuk mengaktifkan Kill Aura
+-- Toggle Kill Aura
 farmTab:CreateToggle({
     Name = "Enable Kill Aura",
     CurrentValue = false,
@@ -164,7 +164,7 @@ farmTab:CreateToggle({
     end
 })
 
--- Slider untuk mengatur jarak Kill Aura
+-- Slider untuk range Kill Aura
 farmTab:CreateSlider({
     Name = "Kill Aura Range",
     Range = {1, 20},
@@ -177,7 +177,7 @@ farmTab:CreateSlider({
     end
 })
 
--- Visual indicator untuk area Kill Aura
+-- Visual Sphere
 local auraSphere = Instance.new("Part")
 auraSphere.Shape = Enum.PartType.Ball
 auraSphere.Material = Enum.Material.Neon
@@ -185,112 +185,45 @@ auraSphere.Color = Color3.fromRGB(255, 0, 0)
 auraSphere.Transparency = 0.7
 auraSphere.CanCollide = false
 auraSphere.Anchored = true
-auraSphere.Size = Vector3.new(killAuraRange * 2, killAuraRange * 2, killAuraRange * 2)
+auraSphere.Size = Vector3.new(killAuraRange*2, killAuraRange*2, killAuraRange*2)
 auraSphere.Parent = workspace
 auraSphere.Visible = false
 
--- Fungsi untuk mendapatkan senjata pemain
-local function getPlayerWeapon()
-    local character = player.Character
-    if not character then return nil end
-    
-    -- Cari tool di backpack atau tangan karakter
-    local backpack = player:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                return tool
-            end
-        end
-    end
-    
-    -- Cari tool yang sedang dipegang
-    for _, tool in ipairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            return tool
-        end
-    end
-    
-    return nil
-end
-
--- Fungsi untuk menyerang musuh
-local function attackEnemy(enemy)
-    local character = player.Character
-    if not character then return end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-    
-    -- Coba dapatkan senjata
-    local weapon = getPlayerWeapon()
-    
-    if weapon then
-        -- Equip senjata
-        weapon.Parent = character
-        
-        -- Arahkan karakter ke musuh
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        local enemyHrp = enemy:FindFirstChild("HumanoidRootPart")
-        
-        if hrp and enemyHrp then
-            -- Hitung arah ke musuh
-            local direction = (enemyHrp.Position - hrp.Position).Unit
-            hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Vector3.new(direction.X, 0, direction.Z))
-            
-            -- Aktifkan senjata (simulasi klik mouse)
-            weapon:Activate()
-            
-            -- Tunggu sebentar sebelum serangan berikutnya
-            task.wait(0.5)
-        end
-    else
-        -- Jika tidak ada senjata, gunakan serangan biasa
-        humanoid:ChangeState(Enum.HumanoidStateType.Attacking)
-        task.wait(0.5)
-    end
-end
-
--- Task untuk Kill Aura
+-- Task Kill Aura
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.2) do
         if killAuraEnabled then
-            local character = player.Character
-            if not character then continue end
-            
-            local hrp = character:FindFirstChild("HumanoidRootPart")
+            local char = player.Character
+            if not char then continue end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
             if not hrp then continue end
-            
-            -- Update visual indicator
+
+            -- Update aura visual
             auraSphere.Position = hrp.Position
-            auraSphere.Size = Vector3.new(killAuraRange * 2, killAuraRange * 2, killAuraRange * 2)
+            auraSphere.Size = Vector3.new(killAuraRange*2, killAuraRange*2, killAuraRange*2)
             auraSphere.Visible = true
-            
-            -- Cari semua musuh di area
-            for _, enemy in ipairs(workspace.Characters:GetChildren()) do
-                if enemy:IsA("Model") and enemy ~= character then
-                    local enemyHrp = enemy:FindFirstChild("HumanoidRootPart")
-                    local enemyHumanoid = enemy:FindFirstChild("Humanoid")
-                    
-                    if enemyHrp and enemyHumanoid and enemyHumanoid.Health > 0 then
-                        -- Hitung jarak ke musuh
-                        local distance = (enemyHrp.Position - hrp.Position).Magnitude
-                        
-                        -- Jika musuh dalam jangkauan, serang
-                        if distance <= killAuraRange then
-                            attackEnemy(enemy)
+
+            -- Loop semua NPC di workspace.Characters
+            for _, npc in ipairs(workspace.Characters:GetChildren()) do
+                if npc:IsA("Model") and npc ~= char then
+                    -- Cari semua Humanoid di model (termasuk submodel)
+                    local humanoid = npc:FindFirstChildWhichIsA("Humanoid", true)
+                    local npcHRP = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart", true)
+                    if humanoid and humanoid.Health > 0 and npcHRP then
+                        local dist = (npcHRP.Position - hrp.Position).Magnitude
+                        if dist <= killAuraRange then
+                            humanoid.Health = 0 -- 1 Hit Kill
                         end
                     end
                 end
             end
         else
-            -- Sembunyikan visual indicator ketika Kill Aura dimatikan
             auraSphere.Visible = false
         end
     end
 end)
 
--- Bersihkan visual indicator ketika script dihentikan
+-- Hapus sphere saat player leave
 game:GetService("Players").PlayerRemoving:Connect(function(leavingPlayer)
     if leavingPlayer == player then
         auraSphere:Destroy()
