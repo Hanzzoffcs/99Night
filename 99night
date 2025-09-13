@@ -1,0 +1,550 @@
+-- ======================================================
+-- 🌲 99 Nights in The Forest Hub
+-- Features: ESP + Wolf Highlight + Auto Farm + Anti Hunger + Bring Multi Items + Kill Aura
+-- ======================================================
+
+-- Load Rayfield
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- Create Window
+local Window = Rayfield:CreateWindow({
+    Name = "🌲 99 Nights Hub",
+    LoadingTitle = "99 Nights in The Forest",
+    LoadingSubtitle = "All-in-One Hub",
+    ConfigurationSaving = { Enabled = false }
+})
+
+-- Tabs
+local espTab = Window:CreateTab("🔎 ESP", 4483362458)
+local farmTab = Window:CreateTab("⚡ Farm", 4483362458)
+local miscTab = Window:CreateTab("⚙ Misc", 4483362458)
+
+local player = game.Players.LocalPlayer
+
+-- ===============================
+-- ESP Section
+-- ===============================
+local espEnabled = false
+espTab:CreateToggle({
+    Name = "Enable ESP with Distance & Wolf Highlight",
+    CurrentValue = false,
+    Flag = "ESPDistanceWolf",
+    Callback = function(Value)
+        espEnabled = Value
+    end
+})
+
+local npcPatterns = {
+    Wolf = {Color = Color3.fromRGB(255,0,0)}, -- merah
+    Default = {Color = Color3.fromRGB(0,0,255)}, -- biru
+    Item = {Color = Color3.fromRGB(0,255,0)} -- hijau
+}
+
+local function createOrUpdateBillboard(obj)
+    local hrp
+    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") then
+        hrp = obj.HumanoidRootPart
+    elseif obj:IsA("BasePart") then
+        hrp = obj
+    else
+        return
+    end
+
+    local bb = hrp:FindFirstChild("ESP_Billboard")
+    if not bb then
+        bb = Instance.new("BillboardGui")
+        bb.Name = "ESP_Billboard"
+        bb.Adornee = hrp
+        bb.Size = UDim2.new(0,200,0,50)
+        bb.AlwaysOnTop = true
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1,0,1,0)
+        label.BackgroundTransparency = 1
+        label.TextScaled = true
+        label.Name = "ESP_Label"
+        label.Parent = bb
+
+        bb.Parent = hrp
+    end
+
+    local label = bb:FindFirstChild("ESP_Label")
+    if label then
+        local plPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position
+        local dist = 0
+        if plPos then
+            dist = (hrp.Position - plPos).Magnitude
+        end
+
+        local color = npcPatterns.Item.Color
+        if obj.Name:lower():find("wolf") then
+            color = npcPatterns.Wolf.Color
+        elseif obj:IsA("Model") and obj.Parent == workspace.Characters then
+            color = npcPatterns.Default.Color
+        end
+
+        label.TextColor3 = color
+        label.Text = string.format("%s [%.1f studs]", obj.Name, dist)
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.8) do
+        if espEnabled then
+            for _,item in pairs(workspace.Items:GetChildren()) do
+                if item:IsA("Model") or item:IsA("Part") then
+                    createOrUpdateBillboard(item)
+                end
+            end
+            for _,char in pairs(workspace.Characters:GetChildren()) do
+                if char:IsA("Model") and char:FindFirstChild("HumanoidRootPart") then
+                    createOrUpdateBillboard(char)
+                end
+            end
+        else
+            for _,item in pairs(workspace.Items:GetDescendants()) do
+                if item:IsA("BillboardGui") and item.Name == "ESP_Billboard" then
+                    item:Destroy()
+                end
+            end
+            for _,char in pairs(workspace.Characters:GetDescendants()) do
+                if char:IsA("BillboardGui") and char.Name == "ESP_Billboard" then
+                    char:Destroy()
+                end
+            end
+        end
+    end
+end)
+
+-- ===============================
+-- Auto Farm Section
+-- ===============================
+local autoFarm = false
+farmTab:CreateToggle({
+    Name = "Auto Farm Chests",
+    CurrentValue = false,
+    Flag = "AutoFarmChest",
+    Callback = function(Value)
+        autoFarm = Value
+    end
+})
+
+task.spawn(function()
+    while task.wait(2) do
+        if autoFarm then
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                for _,item in pairs(workspace.Items:GetChildren()) do
+                    if item:IsA("Model") and item:FindFirstChild("ChestLid") then
+                        hrp.CFrame = item.ChestLid.CFrame + Vector3.new(0,5,0)
+                        task.wait(1.5)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ===============================
+-- Kill Aura Section (Added to Farm Tab)
+-- ===============================
+farmTab:CreateSection("Kill Aura")
+
+local killAuraEnabled = false
+local killAuraRange = 10 -- Default range
+
+-- Toggle untuk mengaktifkan Kill Aura
+farmTab:CreateToggle({
+    Name = "Enable Kill Aura",
+    CurrentValue = false,
+    Flag = "KillAuraEnabled",
+    Callback = function(Value)
+        killAuraEnabled = Value
+    end
+})
+
+-- Slider untuk mengatur jarak Kill Aura
+farmTab:CreateSlider({
+    Name = "Kill Aura Range",
+    Range = {1, 20},
+    Increment = 1,
+    Suffix = "studs",
+    CurrentValue = 10,
+    Flag = "KillAuraRange",
+    Callback = function(Value)
+        killAuraRange = Value
+    end
+})
+
+-- Visual indicator untuk area Kill Aura
+local auraSphere = Instance.new("Part")
+auraSphere.Shape = Enum.PartType.Ball
+auraSphere.Material = Enum.Material.Neon
+auraSphere.Color = Color3.fromRGB(255, 0, 0)
+auraSphere.Transparency = 0.7
+auraSphere.CanCollide = false
+auraSphere.Anchored = true
+auraSphere.Size = Vector3.new(killAuraRange * 2, killAuraRange * 2, killAuraRange * 2)
+auraSphere.Parent = workspace
+auraSphere.Visible = false
+
+-- Fungsi untuk mendapatkan senjata pemain
+local function getPlayerWeapon()
+    local character = player.Character
+    if not character then return nil end
+    
+    -- Cari tool di backpack atau tangan karakter
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                return tool
+            end
+        end
+    end
+    
+    -- Cari tool yang sedang dipegang
+    for _, tool in ipairs(character:GetChildren()) do
+        if tool:IsA("Tool") then
+            return tool
+        end
+    end
+    
+    return nil
+end
+
+-- Fungsi untuk menyerang musuh
+local function attackEnemy(enemy)
+    local character = player.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    -- Coba dapatkan senjata
+    local weapon = getPlayerWeapon()
+    
+    if weapon then
+        -- Equip senjata
+        weapon.Parent = character
+        
+        -- Arahkan karakter ke musuh
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        local enemyHrp = enemy:FindFirstChild("HumanoidRootPart")
+        
+        if hrp and enemyHrp then
+            -- Hitung arah ke musuh
+            local direction = (enemyHrp.Position - hrp.Position).Unit
+            hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Vector3.new(direction.X, 0, direction.Z))
+            
+            -- Aktifkan senjata (simulasi klik mouse)
+            weapon:Activate()
+            
+            -- Tunggu sebentar sebelum serangan berikutnya
+            task.wait(0.5)
+        end
+    else
+        -- Jika tidak ada senjata, gunakan serangan biasa
+        humanoid:ChangeState(Enum.HumanoidStateType.Attacking)
+        task.wait(0.5)
+    end
+end
+
+-- Task untuk Kill Aura
+task.spawn(function()
+    while task.wait(0.1) do
+        if killAuraEnabled then
+            local character = player.Character
+            if not character then continue end
+            
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if not hrp then continue end
+            
+            -- Update visual indicator
+            auraSphere.Position = hrp.Position
+            auraSphere.Size = Vector3.new(killAuraRange * 2, killAuraRange * 2, killAuraRange * 2)
+            auraSphere.Visible = true
+            
+            -- Cari semua musuh di area
+            for _, enemy in ipairs(workspace.Characters:GetChildren()) do
+                if enemy:IsA("Model") and enemy ~= character then
+                    local enemyHrp = enemy:FindFirstChild("HumanoidRootPart")
+                    local enemyHumanoid = enemy:FindFirstChild("Humanoid")
+                    
+                    if enemyHrp and enemyHumanoid and enemyHumanoid.Health > 0 then
+                        -- Hitung jarak ke musuh
+                        local distance = (enemyHrp.Position - hrp.Position).Magnitude
+                        
+                        -- Jika musuh dalam jangkauan, serang
+                        if distance <= killAuraRange then
+                            attackEnemy(enemy)
+                        end
+                    end
+                end
+            end
+        else
+            -- Sembunyikan visual indicator ketika Kill Aura dimatikan
+            auraSphere.Visible = false
+        end
+    end
+end)
+
+-- Bersihkan visual indicator ketika script dihentikan
+game:GetService("Players").PlayerRemoving:Connect(function(leavingPlayer)
+    if leavingPlayer == player then
+        auraSphere:Destroy()
+    end
+end)
+
+-- ===============================
+-- Anti Hunger Section
+-- ===============================
+miscTab:CreateSection("Anti Hunger")
+local antiHungerEnabled = false
+miscTab:CreateToggle({
+    Name = "Lock Hunger Bar",
+    CurrentValue = false,
+    Flag = "AntiHunger",
+    Callback = function(Value)
+        antiHungerEnabled = Value
+    end
+})
+
+task.spawn(function()
+    local hungerBar = player:WaitForChild("PlayerGui"):WaitForChild("Interface")
+                      :WaitForChild("StatBars"):WaitForChild("HungerBar")
+    if hungerBar:IsA("NumberValue") then
+        while task.wait(0.1) do
+            if antiHungerEnabled then
+                hungerBar.Value = hungerBar.Value
+            end
+        end
+    elseif hungerBar:IsA("Frame") or hungerBar:IsA("ImageLabel") then
+        local fullSize = hungerBar.Size
+        while task.wait(0.1) do
+            if antiHungerEnabled then
+                hungerBar.Size = fullSize
+            end
+        end
+    end
+end)
+
+-- ===============================
+-- Bring Items Multi Section (Updated)
+-- ===============================
+miscTab:CreateSection("Bring Items (Updated)")
+
+-- Expanded item list with more items from the game
+local bringItemsList = {
+    "log", 
+    "bandage", 
+    "stone", 
+    "herb",
+    "stick",
+    "rock",
+    "cloth",
+    "rope",
+    "bone",
+    "feather",
+    "berry",
+    "mushroom",
+    "fish",
+    "meat",
+    "leaf",
+    "sap"
+}
+
+-- Create a dictionary for faster lookup
+local bringItemsDict = {}
+for _, item in ipairs(bringItemsList) do
+    bringItemsDict[item:lower()] = true
+end
+
+-- UI for selecting which items to bring
+local selectedItems = {}
+for _, itemName in ipairs(bringItemsList) do
+    selectedItems[itemName] = true
+end
+
+-- Create toggles for each item
+local itemToggles = {}
+for _, itemName in ipairs(bringItemsList) do
+    itemToggles[itemName] = miscTab:CreateToggle({
+        Name = "Bring " .. itemName:gsub("^%l", string.upper),
+        CurrentValue = true,
+        Flag = "Bring" .. itemName:gsub("^%l", string.upper),
+        Callback = function(Value)
+            selectedItems[itemName] = Value
+        end
+    })
+end
+
+-- Select All / Deselect All buttons
+miscTab:CreateButton({
+    Name = "Select All Items",
+    Callback = function()
+        for itemName, toggle in pairs(itemToggles) do
+            toggle:Set(true)
+            selectedItems[itemName] = true
+        end
+    end
+})
+
+miscTab:CreateButton({
+    Name = "Deselect All Items",
+    Callback = function()
+        for itemName, toggle in pairs(itemToggles) do
+            toggle:Set(false)
+            selectedItems[itemName] = false
+        end
+    end
+})
+
+-- Improved bring items function
+miscTab:CreateButton({
+    Name = "Bring Selected Items",
+    Callback = function()
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then 
+            Rayfield:Notify({
+                Title = "Bring Items",
+                Content = "Character not found!",
+                Duration = 3,
+                Image = 4483362458
+            })
+            return 
+        end
+
+        local foundAny = false
+        local itemsBrought = {}
+        
+        for _, item in pairs(workspace.Items:GetChildren()) do
+            -- Check if this is a valid item
+            if item:IsA("Model") or item:IsA("Part") then
+                local itemNameLower = item.Name:lower()
+                
+                -- Check if this item matches any of our selected items
+                for selectedItem in pairs(selectedItems) do
+                    if selectedItems[selectedItem] and itemNameLower:find(selectedItem:lower(), 1, true) then
+                        local mainPart = item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")
+                        if mainPart then
+                            -- Set as primary part if it's a model
+                            if item:IsA("Model") then
+                                item.PrimaryPart = mainPart
+                            end
+                            
+                            -- Calculate position in front of player
+                            local offset = Vector3.new(
+                                math.random(-2, 2),
+                                0,
+                                math.random(-2, 2)
+                            )
+                            
+                            -- Move the item
+                            if item:IsA("Model") then
+                                item:SetPrimaryPartCFrame(hrp.CFrame + hrp.CFrame.LookVector * 5 + offset)
+                            else
+                                item.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 5 + offset
+                            end
+                            
+                            foundAny = true
+                            itemsBrought[selectedItem] = (itemsBrought[selectedItem] or 0) + 1
+                            break -- Break out of inner loop once we found a match
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Create notification message
+        local message
+        if foundAny then
+            local itemsList = ""
+            for itemName, count in pairs(itemsBrought) do
+                itemsList = itemsList .. string.format("%s (%d), ", itemName, count)
+            end
+            -- Remove trailing comma and space
+            itemsList = itemsList:sub(1, -3)
+            
+            message = "Items brought: " .. itemsList
+        else
+            message = "No selected items found in the workspace!"
+        end
+        
+        Rayfield:Notify({
+            Title = "Bring Items",
+            Content = message,
+            Duration = 5,
+            Image = 4483362458
+        })
+    end
+})
+
+-- Auto bring items feature
+local autoBringEnabled = false
+local autoBringInterval = 10 -- seconds
+
+miscTab:CreateToggle({
+    Name = "Auto Bring Items (Every 10s)",
+    CurrentValue = false,
+    Flag = "AutoBringItems",
+    Callback = function(Value)
+        autoBringEnabled = Value
+    end
+})
+
+-- Slider to adjust auto bring interval
+miscTab:CreateSlider({
+    Name = "Auto Bring Interval (Seconds)",
+    Range = {5, 60},
+    Increment = 5,
+    Suffix = "s",
+    CurrentValue = 10,
+    Flag = "AutoBringInterval",
+    Callback = function(Value)
+        autoBringInterval = Value
+    end
+})
+
+-- Auto bring task
+task.spawn(function()
+    while task.wait(autoBringInterval) do
+        if autoBringEnabled then
+            -- Call the bring items function
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                for _, item in pairs(workspace.Items:GetChildren()) do
+                    if item:IsA("Model") or item:IsA("Part") then
+                        local itemNameLower = item.Name:lower()
+                        
+                        for selectedItem in pairs(selectedItems) do
+                            if selectedItems[selectedItem] and itemNameLower:find(selectedItem:lower(), 1, true) then
+                                local mainPart = item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")
+                                if mainPart then
+                                    if item:IsA("Model") then
+                                        item.PrimaryPart = mainPart
+                                        item:SetPrimaryPartCFrame(hrp.CFrame + hrp.CFrame.LookVector * 5)
+                                    else
+                                        item.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 5
+                                    end
+                                    task.wait(0.1) -- Small delay to prevent lag
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ===============================
+-- Ready Notification
+-- ===============================
+Rayfield:Notify({
+    Title = "99 Nights Hub",
+    Content = "All-in-One Hub loaded! ESP + Wolf Highlight + Auto Farm + Kill Aura + Anti Hunger + Bring Items (Updated)",
+    Duration = 4,
+    Image = 4483362458
+})
