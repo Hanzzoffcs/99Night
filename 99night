@@ -1,483 +1,1151 @@
--- ======================================================
--- 🌲 99 Nights in The Forest Hub
--- Features: ESP + Wolf Highlight + Auto Farm + Anti Hunger + Bring Multi Items + Kill Aura
--- ======================================================
+repeat task.wait() until game:IsLoaded()
 
--- Load Rayfield
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
 
--- Create Window
-local Window = Rayfield:CreateWindow({
-    Name = "🌲 99 Nights Hub",
-    LoadingTitle = "99 Nights in The Forest",
-    LoadingSubtitle = "All-in-One Hub",
-    ConfigurationSaving = { Enabled = false }
-})
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
 
--- Tabs
-local espTab = Window:CreateTab("🔎 ESP", 4483362458)
-local farmTab = Window:CreateTab("⚡ Farm", 4483362458)
-local miscTab = Window:CreateTab("⚙ Misc", 4483362458)
+-- combat
 
-local player = game.Players.LocalPlayer
+local killAuraToggle = false
+local chopAuraToggle = false
+local auraRadius = 50
+local currentammount = 0
 
--- ===============================
--- ESP Section
--- ===============================
-local espEnabled = false
-espTab:CreateToggle({
-    Name = "Enable ESP with Distance & Wolf Highlight",
-    CurrentValue = false,
-    Flag = "ESPDistanceWolf",
-    Callback = function(Value)
-        espEnabled = Value
-    end
-})
-
-local npcPatterns = {
-    Wolf = {Color = Color3.fromRGB(255,0,0)}, -- merah
-    Default = {Color = Color3.fromRGB(0,0,255)}, -- biru
-    Item = {Color = Color3.fromRGB(0,255,0)} -- hijau
+local toolsDamageIDs = {
+    ["Old Axe"] = "3_7367831688",
+    ["Good Axe"] = "112_7367831688",
+    ["Strong Axe"] = "116_7367831688",
+    ["Chainsaw"] = "647_8992824875",
+    ["Spear"] = "196_8999010016"
 }
 
-local function createOrUpdateBillboard(obj)
-    local hrp
-    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") then
-        hrp = obj.HumanoidRootPart
-    elseif obj:IsA("BasePart") then
-        hrp = obj
-    else
-        return
-    end
+-- auto food
 
-    local bb = hrp:FindFirstChild("ESP_Billboard")
-    if not bb then
-        bb = Instance.new("BillboardGui")
-        bb.Name = "ESP_Billboard"
-        bb.Adornee = hrp
-        bb.Size = UDim2.new(0,200,0,50)
-        bb.AlwaysOnTop = true
+local autoFeedToggle = false
+local selectedFood = "Carrot"
+local hungerThreshold = 75
+local alwaysFeedEnabledItems = {}
+local alimentos = {
+    "Apple",
+    "Berry",
+    "Carrot",
+    "Cake",
+    "Chili",
+    "Cooked Morsel",
+    "Cooked Steak"
+}
 
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(1,0,1,0)
-        label.BackgroundTransparency = 1
-        label.TextScaled = true
-        label.Name = "ESP_Label"
-        label.Parent = bb
+-- esp
 
-        bb.Parent = hrp
-    end
+local ie = {
+    "Bandage", "Bolt", "Broken Fan", "Broken Microwave", "Cake", "Carrot", "Chair", "Coal", "Coin Stack",
+    "Cooked Morsel", "Cooked Steak", "Fuel Canister", "Iron Body", "Leather Armor", "Log", "MadKit", "Metal Chair",
+    "MedKit", "Old Car Engine", "Old Flashlight", "Old Radio", "Revolver", "Revolver Ammo", "Rifle", "Rifle Ammo",
+    "Morsel", "Sheet Metal", "Steak", "Tyre", "Washing Machine"
+}
+local me = {"Bunny", "Wolf", "Alpha Wolf", "Bear", "Cultist", "Crossbow Cultist", "Alien", "Polar Bear"}
 
-    local label = bb:FindFirstChild("ESP_Label")
-    if label then
-        local plPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position
-        local dist = 0
-        if plPos then
-            dist = (hrp.Position - plPos).Magnitude
+-- bring
+
+local junkItems = {"Tyre", "Bolt", "Broken Fan", "Broken Microwave", "Sheet Metal", "Old Radio", "Washing Machine", "Old Car Engine"}
+local selectedJunkItems = {}
+local fuelItems = {"Log", "Chair", "Coal", "Fuel Canister", "Oil Barrel"}
+local selectedFuelItems = {}
+local foodItems = {"Cake", "Cooked Steak", "Cooked Morsel", "Steak", "Morsel", "Berry", "Carrot"}
+local selectedFoodItems = {}
+local medicalItems = {"Bandage", "MedKit"}
+local selectedMedicalItems = {}
+local equipmentItems = {"Revolver", "Rifle", "Leather Body", "Iron Body", "Revolver Ammo", "Rifle Ammo", "Giant Sack", "Good Sack", "Strong Axe", "Good Axe"}
+local selectedEquipmentItems = {}
+
+-- auto upgrade campfire
+
+local campfireFuelItems = {"Log", "Coal", "Fuel Canister", "Oil Barrel", "Biofuel"}
+local campfireDropPos = Vector3.new(0, 19, 0)
+
+-- auto cook
+
+local autocookItems = {"Morsel", "Steak"}
+local autoCookEnabledItems = {}
+local autoCookEnabled = false
+
+local function getAnyToolWithDamageID(isChopAura)
+    for toolName, damageID in pairs(toolsDamageIDs) do
+        if isChopAura and toolName ~= "Old Axe" and toolName ~= "Good Axe" and toolName ~= "Strong Axe" then
+            continue
         end
-
-        local color = npcPatterns.Item.Color
-        if obj.Name:lower():find("wolf") then
-            color = npcPatterns.Wolf.Color
-        elseif obj:IsA("Model") and obj.Parent == workspace.Characters then
-            color = npcPatterns.Default.Color
+        local tool = LocalPlayer:FindFirstChild("Inventory") and LocalPlayer.Inventory:FindFirstChild(toolName)
+        if tool then
+            return tool, damageID
         end
+    end
+    return nil, nil
+end
 
-        label.TextColor3 = color
-        label.Text = string.format("%s [%.1f studs]", obj.Name, dist)
+local function equipTool(tool)
+    if tool then
+        ReplicatedStorage:WaitForChild("RemoteEvents").EquipItemHandle:FireServer("FireAllClients", tool)
     end
 end
 
-task.spawn(function()
-    while task.wait(0.8) do
-        if espEnabled then
-            for _,item in pairs(workspace.Items:GetChildren()) do
-                if item:IsA("Model") or item:IsA("Part") then
-                    createOrUpdateBillboard(item)
-                end
-            end
-            for _,char in pairs(workspace.Characters:GetChildren()) do
-                if char:IsA("Model") and char:FindFirstChild("HumanoidRootPart") then
-                    createOrUpdateBillboard(char)
-                end
-            end
-        else
-            for _,item in pairs(workspace.Items:GetDescendants()) do
-                if item:IsA("BillboardGui") and item.Name == "ESP_Billboard" then
-                    item:Destroy()
-                end
-            end
-            for _,char in pairs(workspace.Characters:GetDescendants()) do
-                if char:IsA("BillboardGui") and char.Name == "ESP_Billboard" then
-                    char:Destroy()
-                end
-            end
-        end
+local function unequipTool(tool)
+    if tool then
+        ReplicatedStorage:WaitForChild("RemoteEvents").UnequipItemHandle:FireServer("FireAllClients", tool)
     end
-end)
+end
 
--- ===============================
--- Auto Farm Section
--- ===============================
-local autoFarm = false
-farmTab:CreateToggle({
-    Name = "Auto Farm Chests",
-    CurrentValue = false,
-    Flag = "AutoFarmChest",
-    Callback = function(Value)
-        autoFarm = Value
-    end
-})
-
-task.spawn(function()
-    while task.wait(2) do
-        if autoFarm then
-            local char = player.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                for _,item in pairs(workspace.Items:GetChildren()) do
-                    if item:IsA("Model") and item:FindFirstChild("ChestLid") then
-                        hrp.CFrame = item.ChestLid.CFrame + Vector3.new(0,5,0)
-                        task.wait(1.5)
-                    end
-                end
-            end
-        end
-    end
-end)
-
--- ===============================
--- Kill Aura Section (Fixed 1 Hit)
--- ===============================
-farmTab:CreateSection("Kill Aura")
-
-local killAuraEnabled = false
-local killAuraRange = 10 -- default
-
--- Toggle Kill Aura
-farmTab:CreateToggle({
-    Name = "Enable Kill Aura",
-    CurrentValue = false,
-    Flag = "KillAuraEnabled",
-    Callback = function(Value)
-        killAuraEnabled = Value
-    end
-})
-
--- Slider untuk range Kill Aura
-farmTab:CreateSlider({
-    Name = "Kill Aura Range",
-    Range = {1, 20},
-    Increment = 1,
-    Suffix = "studs",
-    CurrentValue = 10,
-    Flag = "KillAuraRange",
-    Callback = function(Value)
-        killAuraRange = Value
-    end
-})
-
--- Visual Sphere
-local auraSphere = Instance.new("Part")
-auraSphere.Shape = Enum.PartType.Ball
-auraSphere.Material = Enum.Material.Neon
-auraSphere.Color = Color3.fromRGB(255, 0, 0)
-auraSphere.Transparency = 0.7
-auraSphere.CanCollide = false
-auraSphere.Anchored = true
-auraSphere.Size = Vector3.new(killAuraRange*2, killAuraRange*2, killAuraRange*2)
-auraSphere.Parent = workspace
-auraSphere.Visible = false
-
--- Task Kill Aura
-task.spawn(function()
-    while task.wait(0.2) do
-        if killAuraEnabled then
-            local char = player.Character
-            if not char then continue end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then continue end
-
-            -- Update aura visual
-            auraSphere.Position = hrp.Position
-            auraSphere.Size = Vector3.new(killAuraRange*2, killAuraRange*2, killAuraRange*2)
-            auraSphere.Visible = true
-
-            -- Loop semua NPC di workspace.Characters
-            for _, npc in ipairs(workspace.Characters:GetChildren()) do
-                if npc:IsA("Model") and npc ~= char then
-                    -- Cari semua Humanoid di model (termasuk submodel)
-                    local humanoid = npc:FindFirstChildWhichIsA("Humanoid", true)
-                    local npcHRP = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart", true)
-                    if humanoid and humanoid.Health > 0 and npcHRP then
-                        local dist = (npcHRP.Position - hrp.Position).Magnitude
-                        if dist <= killAuraRange then
-                            humanoid.Health = 0 -- 1 Hit Kill
+local function killAuraLoop()
+    while killAuraToggle do
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local tool, damageID = getAnyToolWithDamageID(false)
+            if tool and damageID then
+                equipTool(tool)
+                for _, mob in ipairs(Workspace.Characters:GetChildren()) do
+                    if mob:IsA("Model") then
+                        local part = mob:FindFirstChildWhichIsA("BasePart")
+                        if part and (part.Position - hrp.Position).Magnitude <= auraRadius then
+                            pcall(function()
+                                ReplicatedStorage:WaitForChild("RemoteEvents").ToolDamageObject:InvokeServer(
+                                    mob,
+                                    tool,
+                                    damageID,
+                                    CFrame.new(part.Position)
+                                )
+                            end)
                         end
                     end
                 end
+                task.wait(0.1)
+            else
+                task.wait(1)
             end
         else
-            auraSphere.Visible = false
+            task.wait(0.5)
         end
     end
-end)
-
--- Hapus sphere saat player leave
-game:GetService("Players").PlayerRemoving:Connect(function(leavingPlayer)
-    if leavingPlayer == player then
-        auraSphere:Destroy()
-    end
-end)
-
--- ===============================
--- Anti Hunger Section
--- ===============================
-miscTab:CreateSection("Anti Hunger")
-local antiHungerEnabled = false
-miscTab:CreateToggle({
-    Name = "Lock Hunger Bar",
-    CurrentValue = false,
-    Flag = "AntiHunger",
-    Callback = function(Value)
-        antiHungerEnabled = Value
-    end
-})
-
-task.spawn(function()
-    local hungerBar = player:WaitForChild("PlayerGui"):WaitForChild("Interface")
-                      :WaitForChild("StatBars"):WaitForChild("HungerBar")
-    if hungerBar:IsA("NumberValue") then
-        while task.wait(0.1) do
-            if antiHungerEnabled then
-                hungerBar.Value = hungerBar.Value
-            end
-        end
-    elseif hungerBar:IsA("Frame") or hungerBar:IsA("ImageLabel") then
-        local fullSize = hungerBar.Size
-        while task.wait(0.1) do
-            if antiHungerEnabled then
-                hungerBar.Size = fullSize
-            end
-        end
-    end
-end)
-
--- ===============================
--- Bring Items Multi Section (Updated)
--- ===============================
-miscTab:CreateSection("Bring Items (Updated)")
-
--- Expanded item list with more items from the game
-local bringItemsList = {
-    "log", 
-    "bandage", 
-    "stone", 
-    "herb",
-    "stick",
-    "rock",
-    "cloth",
-    "rope",
-    "bone",
-    "feather",
-    "berry",
-    "mushroom",
-    "fish",
-    "meat",
-    "leaf",
-    "sap"
-}
-
--- Create a dictionary for faster lookup
-local bringItemsDict = {}
-for _, item in ipairs(bringItemsList) do
-    bringItemsDict[item:lower()] = true
 end
 
--- UI for selecting which items to bring
-local selectedItems = {}
-for _, itemName in ipairs(bringItemsList) do
-    selectedItems[itemName] = true
+local function chopAuraLoop()
+    while chopAuraToggle do
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local tool, baseDamageID = getAnyToolWithDamageID(true)
+            if tool and baseDamageID then
+                equipTool(tool)
+                currentammount = currentammount + 1
+                local trees = {}
+                local map = Workspace:FindFirstChild("Map")
+                if map then
+                    if map:FindFirstChild("Foliage") then
+                        for _, obj in ipairs(map.Foliage:GetChildren()) do
+                            if obj:IsA("Model") and obj.Name == "Small Tree" then
+                                table.insert(trees, obj)
+                            end
+                        end
+                    end
+                    if map:FindFirstChild("Landmarks") then
+                        for _, obj in ipairs(map.Landmarks:GetChildren()) do
+                            if obj:IsA("Model") and obj.Name == "Small Tree" then
+                                table.insert(trees, obj)
+                            end
+                        end
+                    end
+                end
+                for _, tree in ipairs(trees) do
+                    local trunk = tree:FindFirstChild("Trunk")
+                    if trunk and trunk:IsA("BasePart") and (trunk.Position - hrp.Position).Magnitude <= auraRadius then
+                        local alreadyammount = false
+                        task.spawn(function()
+                            while chopAuraToggle and tree and tree.Parent and not alreadyammount do
+                                alreadyammount = true
+                                currentammount = currentammount + 1
+                                pcall(function()
+                                    ReplicatedStorage:WaitForChild("RemoteEvents").ToolDamageObject:InvokeServer(
+                                        tree,
+                                        tool,
+                                        tostring(currentammount) .. "_7367831688",
+                                        CFrame.new(-2.962610244751, 4.5547881126404, -75.950843811035, 0.89621275663376, -1.3894891459643e-08, 0.44362446665764, -7.994568895775e-10, 1, 3.293635941759e-08, -0.44362446665764, -2.9872644802253e-08, 0.89621275663376)
+                                    )
+                                end)
+                                task.wait(0.5)
+                            end
+                        end)
+                    end
+                end
+                task.wait(0.1)
+            else
+                task.wait(1)
+            end
+        else
+            task.wait(0.5)
+        end
+    end
 end
 
--- Create toggles for each item
-local itemToggles = {}
-for _, itemName in ipairs(bringItemsList) do
-    itemToggles[itemName] = miscTab:CreateToggle({
-        Name = "Bring " .. itemName:gsub("^%l", string.upper),
-        CurrentValue = true,
-        Flag = "Bring" .. itemName:gsub("^%l", string.upper),
-        Callback = function(Value)
-            selectedItems[itemName] = Value
+function wiki(nome)
+    local c = 0
+    for _, i in ipairs(Workspace.Items:GetChildren()) do
+        if i.Name == nome then
+            c = c + 1
         end
+    end
+    return c
+end
+
+function ghn()
+    return math.floor(LocalPlayer.PlayerGui.Interface.StatBars.HungerBar.Bar.Size.X.Scale * 100)
+end
+
+function feed(nome)
+    for _, item in ipairs(Workspace.Items:GetChildren()) do
+        if item.Name == nome then
+            ReplicatedStorage.RemoteEvents.RequestConsumeItem:InvokeServer(item)
+            break
+        end
+    end
+end
+
+function notifeed(nome)
+    Rayfield:Notify({
+        Title = "Auto Food Paused",
+        Content = "The food is gone",
+        Duration = 3
     })
 end
 
--- Select All / Deselect All buttons
-miscTab:CreateButton({
-    Name = "Select All Items",
-    Callback = function()
-        for itemName, toggle in pairs(itemToggles) do
-            toggle:Set(true)
-            selectedItems[itemName] = true
-        end
+local function moveItemToPos(item, position)
+    if not item or not item:IsDescendantOf(workspace) or not item:IsA("BasePart") and not item:IsA("Model") then return end
+    local part = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart") or item:FindFirstChild("Handle")) or item
+    if not part or not part:IsA("BasePart") then return end
+
+    if item:IsA("Model") and not item.PrimaryPart then
+        pcall(function() item.PrimaryPart = part end)
     end
-})
 
-miscTab:CreateButton({
-    Name = "Deselect All Items",
-    Callback = function()
-        for itemName, toggle in pairs(itemToggles) do
-            toggle:Set(false)
-            selectedItems[itemName] = false
-        end
-    end
-})
-
--- Improved bring items function
-miscTab:CreateButton({
-    Name = "Bring Selected Items",
-    Callback = function()
-        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then 
-            Rayfield:Notify({
-                Title = "Bring Items",
-                Content = "Character not found!",
-                Duration = 3,
-                Image = 4483362458
-            })
-            return 
-        end
-
-        local foundAny = false
-        local itemsBrought = {}
-        
-        for _, item in pairs(workspace.Items:GetChildren()) do
-            -- Check if this is a valid item
-            if item:IsA("Model") or item:IsA("Part") then
-                local itemNameLower = item.Name:lower()
-                
-                -- Check if this item matches any of our selected items
-                for selectedItem in pairs(selectedItems) do
-                    if selectedItems[selectedItem] and itemNameLower:find(selectedItem:lower(), 1, true) then
-                        local mainPart = item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")
-                        if mainPart then
-                            -- Set as primary part if it's a model
-                            if item:IsA("Model") then
-                                item.PrimaryPart = mainPart
-                            end
-                            
-                            -- Calculate position in front of player
-                            local offset = Vector3.new(
-                                math.random(-2, 2),
-                                0,
-                                math.random(-2, 2)
-                            )
-                            
-                            -- Move the item
-                            if item:IsA("Model") then
-                                item:SetPrimaryPartCFrame(hrp.CFrame + hrp.CFrame.LookVector * 5 + offset)
-                            else
-                                item.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 5 + offset
-                            end
-                            
-                            foundAny = true
-                            itemsBrought[selectedItem] = (itemsBrought[selectedItem] or 0) + 1
-                            break -- Break out of inner loop once we found a match
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Create notification message
-        local message
-        if foundAny then
-            local itemsList = ""
-            for itemName, count in pairs(itemsBrought) do
-                itemsList = itemsList .. string.format("%s (%d), ", itemName, count)
-            end
-            -- Remove trailing comma and space
-            itemsList = itemsList:sub(1, -3)
-            
-            message = "Items brought: " .. itemsList
+    pcall(function()
+        game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents").RequestStartDraggingItem:FireServer(item)
+        if item:IsA("Model") then
+            item:SetPrimaryPartCFrame(CFrame.new(position))
         else
-            message = "No selected items found in the workspace!"
+            part.CFrame = CFrame.new(position)
         end
-        
-        Rayfield:Notify({
-            Title = "Bring Items",
-            Content = message,
-            Duration = 5,
-            Image = 4483362458
-        })
+        game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents").StopDraggingItem:FireServer(item)
+    end)
+end
+
+local function getChests()
+    local chests = {}
+    local chestNames = {}
+    local index = 1
+    for _, item in ipairs(workspace:WaitForChild("Items"):GetChildren()) do
+        if item.Name:match("^Item Chest") and not item:GetAttribute("8721081708Opened") then
+            table.insert(chests, item)
+            table.insert(chestNames, "Chest " .. index)
+            index = index + 1
+        end
     end
-})
+    return chests, chestNames
+end
 
--- Auto bring items feature
-local autoBringEnabled = false
-local autoBringInterval = 10 -- seconds
+local currentChests, currentChestNames = getChests()
+local selectedChest = currentChestNames[1] or nil
 
-miscTab:CreateToggle({
-    Name = "Auto Bring Items (Every 10s)",
-    CurrentValue = false,
-    Flag = "AutoBringItems",
-    Callback = function(Value)
-        autoBringEnabled = Value
+local function getMobs()
+    local mobs = {}
+    local mobNames = {}
+    local index = 1
+    for _, character in ipairs(workspace:WaitForChild("Characters"):GetChildren()) do
+        if character.Name:match("^Lost Child") and character:GetAttribute("Lost") == true then
+            table.insert(mobs, character)
+            table.insert(mobNames, character.Name)
+            index = index + 1
+        end
     end
-})
+    return mobs, mobNames
+end
 
--- Slider to adjust auto bring interval
-miscTab:CreateSlider({
-    Name = "Auto Bring Interval (Seconds)",
-    Range = {5, 60},
-    Increment = 5,
-    Suffix = "s",
-    CurrentValue = 10,
-    Flag = "AutoBringInterval",
-    Callback = function(Value)
-        autoBringInterval = Value
-    end
-})
+local currentMobs, currentMobNames = getMobs()
+local selectedMob = currentMobNames[1] or nil
 
--- Auto bring task
-task.spawn(function()
-    while task.wait(autoBringInterval) do
-        if autoBringEnabled then
-            -- Call the bring items function
-            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+function tp1()
+	(game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart").CFrame =
+CFrame.new(0.43132782, 15.77634621, -1.88620758, -0.270917892, 0.102997094, 0.957076371, 0.639657021, 0.762253821, 0.0990355015, -0.719334781, 0.639031112, -0.272391081)
+end
+
+local function tp2()
+    local targetPart = workspace:FindFirstChild("Map")
+        and workspace.Map:FindFirstChild("Landmarks")
+        and workspace.Map.Landmarks:FindFirstChild("Stronghold")
+        and workspace.Map.Landmarks.Stronghold:FindFirstChild("Functional")
+        and workspace.Map.Landmarks.Stronghold.Functional:FindFirstChild("EntryDoors")
+        and workspace.Map.Landmarks.Stronghold.Functional.EntryDoors:FindFirstChild("DoorRight")
+        and workspace.Map.Landmarks.Stronghold.Functional.EntryDoors.DoorRight:FindFirstChild("Model")
+    if targetPart then
+        local children = targetPart:GetChildren()
+        local destination = children[5]
+        if destination and destination:IsA("BasePart") then
+            local hrp = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
-                for _, item in pairs(workspace.Items:GetChildren()) do
-                    if item:IsA("Model") or item:IsA("Part") then
-                        local itemNameLower = item.Name:lower()
-                        
-                        for selectedItem in pairs(selectedItems) do
-                            if selectedItems[selectedItem] and itemNameLower:find(selectedItem:lower(), 1, true) then
-                                local mainPart = item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")
-                                if mainPart then
-                                    if item:IsA("Model") then
-                                        item.PrimaryPart = mainPart
-                                        item:SetPrimaryPartCFrame(hrp.CFrame + hrp.CFrame.LookVector * 5)
-                                    else
-                                        item.CFrame = hrp.CFrame + hrp.CFrame.LookVector * 5
-                                    end
-                                    task.wait(0.1) -- Small delay to prevent lag
-                                end
-                            end
-                        end
-                    end
-                end
+                hrp.CFrame = destination.CFrame + Vector3.new(0, 5, 0)
             end
         end
     end
-end)
+end
 
--- ===============================
--- Ready Notification
--- ===============================
+local flyToggle = false
+local flySpeed = 1
+local FLYING = false
+local flyKeyDown, flyKeyUp, mfly1, mfly2
+local IYMouse = game:GetService("UserInputService")
+
+-- Fly pc
+local function sFLY()
+    repeat task.wait() until Players.LocalPlayer and Players.LocalPlayer.Character and Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart") and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    repeat task.wait() until IYMouse
+    if flyKeyDown or flyKeyUp then flyKeyDown:Disconnect(); flyKeyUp:Disconnect() end
+
+    local T = Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+    local CONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+    local lCONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+    local SPEED = flySpeed
+
+    local function FLY()
+        FLYING = true
+        local BG = Instance.new('BodyGyro')
+        local BV = Instance.new('BodyVelocity')
+        BG.P = 9e4
+        BG.Parent = T
+        BV.Parent = T
+        BG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        BG.CFrame = T.CFrame
+        BV.Velocity = Vector3.new(0, 0, 0)
+        BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        task.spawn(function()
+            while FLYING do
+                task.wait()
+                if not flyToggle and Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid') then
+                    Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid').PlatformStand = true
+                end
+                if CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or CONTROL.Q + CONTROL.E ~= 0 then
+                    SPEED = flySpeed
+                elseif not (CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or CONTROL.Q + CONTROL.E ~= 0) and SPEED ~= 0 then
+                    SPEED = 0
+                end
+                if (CONTROL.L + CONTROL.R) ~= 0 or (CONTROL.F + CONTROL.B) ~= 0 or (CONTROL.Q + CONTROL.E) ~= 0 then
+                    BV.Velocity = ((workspace.CurrentCamera.CoordinateFrame.lookVector * (CONTROL.F + CONTROL.B)) + ((workspace.CurrentCamera.CoordinateFrame * CFrame.new(CONTROL.L + CONTROL.R, (CONTROL.F + CONTROL.B + CONTROL.Q + CONTROL.E) * 0.2, 0).p) - workspace.CurrentCamera.CoordinateFrame.p)) * SPEED
+                    lCONTROL = {F = CONTROL.F, B = CONTROL.B, L = CONTROL.L, R = CONTROL.R}
+                elseif (CONTROL.L + CONTROL.R) == 0 and (CONTROL.F + CONTROL.B) == 0 and (CONTROL.Q + CONTROL.E) == 0 and SPEED ~= 0 then
+                    BV.Velocity = ((workspace.CurrentCamera.CoordinateFrame.lookVector * (lCONTROL.F + lCONTROL.B)) + ((workspace.CurrentCamera.CoordinateFrame * CFrame.new(lCONTROL.L + lCONTROL.R, (lCONTROL.F + lCONTROL.B + CONTROL.Q + CONTROL.E) * 0.2, 0).p) - workspace.CurrentCamera.CoordinateFrame.p)) * SPEED
+                else
+                    BV.Velocity = Vector3.new(0, 0, 0)
+                end
+                BG.CFrame = workspace.CurrentCamera.CoordinateFrame
+            end
+            CONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+            lCONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+            SPEED = 0
+            BG:Destroy()
+            BV:Destroy()
+            if Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid') then
+                Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid').PlatformStand = false
+            end
+        end)
+    end
+    flyKeyDown = IYMouse.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            local KEY = input.KeyCode.Name
+            if KEY == "W" then
+                CONTROL.F = flySpeed
+            elseif KEY == "S" then
+                CONTROL.B = -flySpeed
+            elseif KEY == "A" then
+                CONTROL.L = -flySpeed
+            elseif KEY == "D" then 
+                CONTROL.R = flySpeed
+            elseif KEY == "E" then
+                CONTROL.Q = flySpeed * 2
+            elseif KEY == "Q" then
+                CONTROL.E = -flySpeed * 2
+            end
+            pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Track end)
+        end
+    end)
+    flyKeyUp = IYMouse.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            local KEY = input.KeyCode.Name
+            if KEY == "W" then
+                CONTROL.F = 0
+            elseif KEY == "S" then
+                CONTROL.B = 0
+            elseif KEY == "A" then
+                CONTROL.L = 0
+            elseif KEY == "D" then
+                CONTROL.R = 0
+            elseif KEY == "E" then
+                CONTROL.Q = 0
+            elseif KEY == "Q" then
+                CONTROL.E = 0
+            end
+        end
+    end)
+    FLY()
+end
+
+-- Fly mobile
+local function NOFLY()
+    FLYING = false
+    if flyKeyDown then flyKeyDown:Disconnect() end
+    if flyKeyUp then flyKeyUp:Disconnect() end
+    if mfly1 then mfly1:Disconnect() end
+    if mfly2 then mfly2:Disconnect() end
+    if Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid') then
+        Players.LocalPlayer.Character:FindFirstChildOfClass('Humanoid').PlatformStand = false
+    end
+    pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end)
+end
+
+local function UnMobileFly()
+    pcall(function()
+        FLYING = false
+        local root = Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+        if root:FindFirstChild("BodyVelocity") then root:FindFirstChild("BodyVelocity"):Destroy() end
+        if root:FindFirstChild("BodyGyro") then root:FindFirstChild("BodyGyro"):Destroy() end
+        if Players.LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid") then
+            Players.LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid").PlatformStand = false
+        end
+        if mfly1 then mfly1:Disconnect() end
+        if mfly2 then mfly2:Disconnect() end
+    end)
+end
+
+local function MobileFly()
+    UnMobileFly()
+    FLYING = true
+
+    local root = Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+    local camera = workspace.CurrentCamera
+    local v3none = Vector3.new()
+    local v3zero = Vector3.new(0, 0, 0)
+    local v3inf = Vector3.new(9e9, 9e9, 9e9)
+
+    local controlModule = require(Players.LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"):WaitForChild("ControlModule"))
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "BodyVelocity"
+    bv.Parent = root
+    bv.MaxForce = v3zero
+    bv.Velocity = v3zero
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "BodyGyro"
+    bg.Parent = root
+    bg.MaxTorque = v3inf
+    bg.P = 1000
+    bg.D = 50
+
+    mfly1 = Players.LocalPlayer.CharacterAdded:Connect(function()
+        local newRoot = Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+        local newBv = Instance.new("BodyVelocity")
+        newBv.Name = "BodyVelocity"
+        newBv.Parent = newRoot
+        newBv.MaxForce = v3zero
+        newBv.Velocity = v3zero
+
+        local newBg = Instance.new("BodyGyro")
+        newBg.Name = "BodyGyro"
+        newBg.Parent = newRoot
+        newBg.MaxTorque = v3inf
+        newBg.P = 1000
+        newBg.D = 50
+    end)
+
+    mfly2 = game:GetService("RunService").RenderStepped:Connect(function()
+        root = Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+        camera = workspace.CurrentCamera
+        if Players.LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid") and root and root:FindFirstChild("BodyVelocity") and root:FindFirstChild("BodyGyro") then
+            local humanoid = Players.LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+            local VelocityHandler = root:FindFirstChild("BodyVelocity")
+            local GyroHandler = root:FindFirstChild("BodyGyro")
+
+            VelocityHandler.MaxForce = v3inf
+            GyroHandler.MaxTorque = v3inf
+            humanoid.PlatformStand = true
+            GyroHandler.CFrame = camera.CoordinateFrame
+            VelocityHandler.Velocity = v3none
+
+            local direction = controlModule:GetMoveVector()
+            if direction.X > 0 then
+                VelocityHandler.Velocity = VelocityHandler.Velocity + camera.CFrame.RightVector * (direction.X * (flySpeed * 50))
+            end
+            if direction.X < 0 then
+                VelocityHandler.Velocity = VelocityHandler.Velocity + camera.CFrame.RightVector * (direction.X * (flySpeed * 50))
+            end
+            if direction.Z > 0 then
+                VelocityHandler.Velocity = VelocityHandler.Velocity - camera.CFrame.LookVector * (direction.Z * (flySpeed * 50))
+            end
+            if direction.Z < 0 then
+                VelocityHandler.Velocity = VelocityHandler.Velocity - camera.CFrame.LookVector * (direction.Z * (flySpeed * 50))
+            end
+        end
+    end)
+end
+
+local Confirmed = false
 Rayfield:Notify({
-    Title = "99 Nights Hub",
-    Content = "All-in-One Hub loaded! ESP + Wolf Highlight + Auto Farm + Kill Aura + Anti Hunger + Bring Items (Updated)",
-    Duration = 4,
-    Image = 4483362458
+    Title = "DYHUB Loaded! - 99 Night in the Forest",
+    Content = "DYHUB'S TEAM | Join our (dsc.gg/dyhub)",
+    Duration = 5
 })
+
+-- Initialize Rayfield
+local Window = Rayfield:CreateWindow({
+    Name = "DYHUB - 99 Night in the Forest @ In-game (Beta)",
+    LoadingTitle = "DYHUB Loading...",
+    LoadingSubtitle = "by STELLAR",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "DYHUB Config | 99NitF | 99",
+        FileName = "DYHUB"
+    },
+    Discord = {
+        Enabled = true,
+        Invite = "dsc.gg/dyhub",
+        RememberJoins = true
+    },
+    KeySystem = false,
+})
+
+-- Create tabs
+local Tabs = {
+    Main = Window:CreateTab("Main", 4483362458),
+    Auto = Window:CreateTab("Auto", 4483362458),
+    esp = Window:CreateTab("Esp", 4483362458),
+    br = Window:CreateTab("Bring", 4483362458),
+    Tp = Window:CreateTab("Teleport", 4483362458),
+    Fly = Window:CreateTab("Player", 4483362458),
+    Combat = Window:CreateTab("Combat", 4483362458),
+    More = Window:CreateTab("Other", 4483362458),
+    Misc = Window:CreateTab("Settings", 4483362458)
+}
+
+-- Combat Tab
+local CombatSection = Tabs.Combat:CreateSection("Aura")
+Tabs.Combat:CreateToggle({
+    Name = "Kill Aura",
+    CurrentValue = false,
+    Flag = "KillAuraToggle",
+    Callback = function(state)
+        killAuraToggle = state
+        if state then
+            task.spawn(killAuraLoop)
+        else
+            local tool, _ = getAnyToolWithDamageID(false)
+            unequipTool(tool)
+        end
+    end,
+})
+
+Tabs.Combat:CreateToggle({
+    Name = "Chop Aura",
+    CurrentValue = false,
+    Flag = "ChopAuraToggle",
+    Callback = function(state)
+        chopAuraToggle = state
+        if state then
+            task.spawn(chopAuraLoop)
+        else
+            local tool, _ = getAnyToolWithDamageID(true)
+            unequipTool(tool)
+        end
+    end,
+})
+
+local CombatSettingsSection = Tabs.Combat:CreateSection("Settings")
+Tabs.Combat:CreateSlider({
+    Name = "Aura Radius",
+    Range = {50, 500},
+    Increment = 10,
+    Suffix = "studs",
+    CurrentValue = 50,
+    Flag = "AuraRadius",
+    Callback = function(value)
+        auraRadius = value
+    end,
+})
+
+-- Main Tab
+local AutoFeedSection = Tabs.Main:CreateSection("Auto Feed")
+Tabs.Main:CreateDropdown({
+    Name = "Select Food",
+    Options = alimentos,
+    CurrentOption = "Carrot",
+    Flag = "SelectedFood",
+    Callback = function(value)
+        selectedFood = value
+    end,
+})
+
+Tabs.Main:CreateInput({
+    Name = "Feed %",
+    PlaceholderText = "Ex: 75",
+    Numeric = true,
+    CurrentValue = "75",
+    Flag = "HungerThreshold",
+    Callback = function(value)
+        local n = tonumber(value)
+        if n then
+            hungerThreshold = math.clamp(n, 0, 100)
+        end
+    end,
+})
+
+Tabs.Main:CreateToggle({
+    Name = "Auto Feed",
+    CurrentValue = false,
+    Flag = "AutoFeedToggle",
+    Callback = function(state)
+        autoFeedToggle = state
+        if state then
+            task.spawn(function()
+                while autoFeedToggle do
+                    task.wait(0.075)
+                    if wiki(selectedFood) == 0 then
+                        autoFeedToggle = false
+                        Rayfield:Notify({
+                            Title = "Auto Food Paused",
+                            Content = "The food is gone",
+                            Duration = 3
+                        })
+                        break
+                    end
+                    if ghn() <= hungerThreshold then
+                        feed(selectedFood)
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+-- Auto Tab
+local AutoFarmSection = Tabs.Auto:CreateSection("Auto Farm Log")
+Tabs.Auto:CreateToggle({
+    Name = "Auto Farm Log (Fix)",
+    CurrentValue = false,
+    Flag = "AutoFarmLog",
+    Callback = function(state)
+        -- Your auto farm log implementation here
+    end,
+})
+
+local SafeCampfireSection = Tabs.Auto:CreateSection("Safe Campfire")
+Tabs.Auto:CreateToggle({
+    Name = "Auto to Campfire (Low HP)",
+    CurrentValue = false,
+    Flag = "LowHPCampfire",
+    Callback = function(state)
+        getgenv().Lowhp = state
+        -- Your implementation here
+    end,
+})
+
+Tabs.Auto:CreateToggle({
+    Name = "Auto to Campfire (At Night - Once per Night)",
+    CurrentValue = false,
+    Flag = "NightCampfire",
+    Callback = function(state)
+        getgenv().AutoCampAtNight = state
+        -- Your implementation here
+    end,
+})
+
+local UpgradeCampfireSection = Tabs.Auto:CreateSection("Auto Upgrade Campfire")
+Tabs.Auto:CreateDropdown({
+    Name = "Auto Upgrade Campfire",
+    Options = campfireFuelItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "CampfireItems",
+    Callback = function(options)
+        for _, itemName in ipairs(campfireFuelItems) do
+            alwaysFeedEnabledItems[itemName] = table.find(options, itemName) ~= nil
+        end
+    end,
+})
+
+Tabs.Auto:CreateToggle({
+    Name = "Auto Upgrade Campfire",
+    CurrentValue = false,
+    Flag = "AutoUpgradeCampfire",
+    Callback = function(state)
+        autoUpgradeCampfireEnabled = state
+        -- Your implementation here
+    end,
+})
+
+local AutoCookSection = Tabs.Auto:CreateSection("Auto Cook Food")
+Tabs.Auto:CreateDropdown({
+    Name = "Auto Cook Food",
+    Options = autocookItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "AutoCookItems",
+    Callback = function(options)
+        for _, itemName in ipairs(autocookItems) do
+            autoCookEnabledItems[itemName] = table.find(options, itemName) ~= nil
+        end
+    end,
+})
+
+Tabs.Auto:CreateToggle({
+    Name = "Auto Cook Food",
+    CurrentValue = false,
+    Flag = "AutoCookToggle",
+    Callback = function(state)
+        autoCookEnabled = state
+    end,
+})
+
+-- Teleport Tab
+local TeleportSection = Tabs.Tp:CreateSection("Teleport")
+Tabs.Tp:CreateToggle({
+    Name = "Scan Map (Essential)",
+    CurrentValue = false,
+    Flag = "ScanMap",
+    Callback = function(state)
+        getgenv().scan_map = state
+        -- Your implementation here
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Campfire",
+    Callback = function()
+        tp1()
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Stronghold",
+    Callback = function()
+        tp2()
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Safe Zone",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Trader (Bunny Foot)",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local TreeSection = Tabs.Tp:CreateSection("Tree")
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Random Tree",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local ChildrenSection = Tabs.Tp:CreateSection("Children")
+local MobDropdown = Tabs.Tp:CreateDropdown({
+    Name = "Select Child",
+    Options = currentMobNames,
+    CurrentOption = currentMobNames[1],
+    Flag = "SelectedMob",
+    Callback = function(value)
+        selectedMob = value
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Refresh List",
+    Callback = function()
+        currentMobs, currentMobNames = getMobs()
+        if #currentMobNames > 0 then
+            selectedMob = currentMobNames[1]
+            MobDropdown:SetOptions(currentMobNames)
+        else
+            selectedMob = nil
+            MobDropdown:SetOptions({"No child found"})
+        end
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Child",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local ChestSection = Tabs.Tp:CreateSection("Chest")
+local ChestDropdown = Tabs.Tp:CreateDropdown({
+    Name = "Select Chest",
+    Options = currentChestNames,
+    CurrentOption = currentChestNames[1],
+    Flag = "SelectedChest",
+    Callback = function(value)
+        selectedChest = value
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Refresh List",
+    Callback = function()
+        currentChests, currentChestNames = getChests()
+        if #currentChestNames > 0 then
+            selectedChest = currentChestNames[1]
+            ChestDropdown:SetOptions(currentChestNames)
+        else
+            selectedChest = nil
+            ChestDropdown:SetOptions({"No chests found"})
+        end
+    end,
+})
+
+Tabs.Tp:CreateButton({
+    Name = "Teleport to Chest",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+-- Bring Tab
+local JunkSection = Tabs.br:CreateSection("Junk")
+Tabs.br:CreateDropdown({
+    Name = "Select Junk Items",
+    Options = junkItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedJunkItems",
+    Callback = function(options)
+        selectedJunkItems = options
+    end,
+})
+
+Tabs.br:CreateButton({
+    Name = "Bring Junk Items",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local FuelSection = Tabs.br:CreateSection("Fuel")
+Tabs.br:CreateDropdown({
+    Name = "Select Fuel Items",
+    Options = fuelItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedFuelItems",
+    Callback = function(options)
+        selectedFuelItems = options
+    end,
+})
+
+Tabs.br:CreateButton({
+    Name = "Bring Fuel Items",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local FoodSection = Tabs.br:CreateSection("Food")
+Tabs.br:CreateDropdown({
+    Name = "Select Food Items",
+    Options = foodItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedFoodItems",
+    Callback = function(options)
+        selectedFoodItems = options
+    end,
+})
+
+Tabs.br:CreateButton({
+    Name = "Bring Food Items",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local MedicineSection = Tabs.br:CreateSection("Medicine")
+Tabs.br:CreateDropdown({
+    Name = "Select Medical Items",
+    Options = medicalItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedMedicalItems",
+    Callback = function(options)
+        selectedMedicalItems = options
+    end,
+})
+
+Tabs.br:CreateButton({
+    Name = "Bring Medical Items",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+local EquipmentSection = Tabs.br:CreateSection("Equipment")
+Tabs.br:CreateDropdown({
+    Name = "Select Equipment Items",
+    Options = equipmentItems,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedEquipmentItems",
+    Callback = function(options)
+        selectedEquipmentItems = options
+    end,
+})
+
+Tabs.br:CreateButton({
+    Name = "Bring Equipment Items",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+-- Player Tab
+local FlySection = Tabs.Fly:CreateSection("Main")
+Tabs.Fly:CreateSlider({
+    Name = "Fly Speed",
+    Range = {1, 20},
+    Increment = 1,
+    Suffix = "speed",
+    CurrentValue = 1,
+    Flag = "FlySpeed",
+    Callback = function(value)
+        flySpeed = value
+    end,
+})
+
+Tabs.Fly:CreateToggle({
+    Name = "Enable Fly",
+    CurrentValue = false,
+    Flag = "FlyToggle",
+    Callback = function(state)
+        flyToggle = state
+        if flyToggle then
+            if game:GetService("UserInputService").TouchEnabled then
+                MobileFly()
+            else
+                sFLY()
+            end
+        else
+            NOFLY()
+            UnMobileFly()
+        end
+    end,
+})
+
+Tabs.Fly:CreateSlider({
+    Name = "Speed",
+    Range = {16, 300},
+    Increment = 5,
+    Suffix = "speed",
+    CurrentValue = 16,
+    Flag = "WalkSpeed",
+    Callback = function(value)
+        speed = value
+    end,
+})
+
+Tabs.Fly:CreateToggle({
+    Name = "Enable Speed",
+    CurrentValue = false,
+    Flag = "SpeedToggle",
+    Callback = function(state)
+        setSpeed(state and speed or 16)
+    end,
+})
+
+Tabs.Fly:CreateSlider({
+    Name = "Jump",
+    Range = {10, 300},
+    Increment = 5,
+    Suffix = "power",
+    CurrentValue = 50,
+    Flag = "JumpPower",
+    Callback = function(value)
+        jump = value
+    end,
+})
+
+Tabs.Fly:CreateToggle({
+    Name = "Enable Jump",
+    CurrentValue = false,
+    Flag = "JumpToggle",
+    Callback = function(state)
+        setJump(state and jump or 16)
+    end,
+})
+
+Tabs.Fly:CreateToggle({
+    Name = "No Clip",
+    CurrentValue = false,
+    Flag = "NoClipToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+Tabs.Fly:CreateToggle({
+    Name = "Infinite Jump",
+    CurrentValue = false,
+    Flag = "InfiniteJumpToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+-- ESP Tab
+local EspItemsSection = Tabs.esp:CreateSection("Esp Items")
+Tabs.esp:CreateDropdown({
+    Name = "Esp Items",
+    Options = ie,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedEspItems",
+    Callback = function(options)
+        selectedItems = options
+    end,
+})
+
+Tabs.esp:CreateToggle({
+    Name = "Enable Esp",
+    CurrentValue = false,
+    Flag = "EspItemsToggle",
+    Callback = function(state)
+        espItemsEnabled = state
+    end,
+})
+
+local EspEntitySection = Tabs.esp:CreateSection("Esp Entity")
+Tabs.esp:CreateDropdown({
+    Name = "Esp Entity",
+    Options = me,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "SelectedEspMobs",
+    Callback = function(options)
+        selectedMobs = options
+    end,
+})
+
+Tabs.esp:CreateToggle({
+    Name = "Enable Esp",
+    CurrentValue = false,
+    Flag = "EspMobsToggle",
+    Callback = function(state)
+        espMobsEnabled = state
+    end,
+})
+
+-- Main Tab Misc Section
+local MiscSection = Tabs.Main:CreateSection("Misc")
+Tabs.Main:CreateToggle({
+    Name = "Instant Interact",
+    CurrentValue = false,
+    Flag = "InstantInteractToggle",
+    Callback = function(state)
+        instantInteractEnabled = state
+    end,
+})
+
+Tabs.Main:CreateToggle({
+    Name = "Auto Stun Deer",
+    CurrentValue = false,
+    Flag = "AutoStunDeerToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+-- Settings Tab
+local VisualSection = Tabs.Misc:CreateSection("Visual")
+Tabs.Misc:CreateToggle({
+    Name = "Full Bright",
+    CurrentValue = false,
+    Flag = "FullBrightToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+Tabs.Misc:CreateToggle({
+    Name = "No Fog",
+    CurrentValue = false,
+    Flag = "NoFogToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+Tabs.Misc:CreateToggle({
+    Name = "Vibrant Colors",
+    CurrentValue = false,
+    Flag = "VibrantColorsToggle",
+    Callback = function(state)
+        -- Your implementation here
+    end,
+})
+
+local StatusSection = Tabs.Misc:CreateSection("Show Status")
+Tabs.Misc:CreateToggle({
+    Name = "Show FPS",
+    CurrentValue = true,
+    Flag = "ShowFPSToggle",
+    Callback = function(val)
+        showFPS = val
+    end,
+})
+
+Tabs.Misc:CreateToggle({
+    Name = "Show Ping (ms)",
+    CurrentValue = true,
+    Flag = "ShowPingToggle",
+    Callback = function(val)
+        showPing = val
+    end,
+})
+
+local LowGraphicSection = Tabs.Misc:CreateSection("Low Graphic")
+Tabs.Misc:CreateButton({
+    Name = "FPS Boost (By Roblox)",
+    Callback = function()
+        -- Your implementation here
+    end,
+})
+
+Tabs.Misc:CreateButton({
+    Name = "FPS Boost (By DYHUB)",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/dyumra/DYHUB-Universal-Game/refs/heads/main/Nigga.lua"))()
+    end,
+})
+
+-- More Tab
+local AutoFarmSection = Tabs.More:CreateSection("Auto Farm")
+Tabs.More:CreateButton({
+    Name = "Auto Farm (Gem)",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/dyumra/Detail/refs/heads/main/Somtank"))()
+    end,
+})
+
+-- Initialize Rayfield
+Rayfield:LoadConfiguration()
